@@ -1,0 +1,309 @@
+---
+title: "Final Project - Week 10"
+author: "Nana Noda-Morgan"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+# Impact of Climate Change on Agriculture
+
+## Introduction
+
+Climate change is a heavily discussed topic, and for good reason. It poses significant challenges to the world we live in by way of hotter temperatures, severe storms, increased drought, rising sea levels, loss of species, and harm to our food production. This research will focus on food production and seek to analyze the relationship between climate change and crop yields by looking at historical data on crop production and climate variables such as CO2 emissions, temperature anomalies, and precipitation. Understanding this relationship is critical for developing strategies to mitigate the impacts of climate change on agriculture and ensure food security for the masses.   
+  
+  
+## Research Question
+
+The main question we aim to answer in this research is whether or not we can predict crop yields based on historical climate and yield data. Furthermore, how can these predictions inform agricultural practices? By leveraging data science techniques on the vast amounts of data available surrounding this topic, we can aim to uncover trends that can help predict future crop yield scenarios under varying climate conditions. The result will provide valuable insights for farmers, researchers, and even policymakers and aid in developing strategies to improve agricultural practices and inform policy decisions as we continue to battle climate change around the world. Specifically, we will clean, transform, visualize, and fit a model that will help us predict crop yield based on various climate variables. 
+  
+  
+## Analysis
+
+```{R import data, include=TRUE}
+
+# Load the datasets
+crop_yields <- read.csv('crop_yields.csv')
+global_temp <- read.csv('global_temp.csv')
+global_co2 <- read.csv('global_co2.csv')
+global_precipitation <- read.csv('global_precipitation.csv')
+
+# Preview the datasets
+head(crop_yields)
+head(global_temp)
+head(global_co2)
+head(global_precipitation)
+```
+
+  
+## Plotting the data
+```{R plot data, include=TRUE}
+
+library(ggplot2)
+
+ggplot(crop_yields, aes(x = year, y = Yield, color = factor(item))) +
+  geom_line() +
+  labs(title = "Global Crop Yield", x = "Year", y = "Yield (tonnes)") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+ggplot(crop_yields, aes(x = year, y = Area.harvested, color = factor(item))) +
+  geom_line() +
+  labs(title = "Global Crop Harvest Area", x = "Year", y = "Area Harvested (Hectacres)") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+ggplot(crop_yields, aes(x = year, y = Production, color = factor(item))) +
+  geom_line() +
+  labs(title = "Global Crop Production", x = "Year", y = "Production (100g/ha)") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+ggplot(global_temp, aes(x = year)) +
+  geom_line(aes(y = no_smoothing, color = "blue")) +
+  geom_line(aes(y = lowess, color = "red")) +
+  labs(title = "Global Temperature", x = "Year", y = "Temperature Anomaly (C)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggplot(global_co2, aes(x = year)) +
+  geom_line(aes(y = avg.c02.ppm, color = "blue")) +
+  labs(title = "Global CO2 Emissions", x = "Year", y = "Average CO2 Emissings (parts per million") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+ggplot(global_precipitation, aes(x = year, y = anomaly, fill = anomaly > 0)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("TRUE" = "blue", "FALSE" = "red")) +
+  labs(title = "Global Precipitation Anomalies", x = "Year", y = "Precipitation Anomaly") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+
+## Manipulating and cleaning the data
+```{R clean data, include=TRUE}
+
+# Data cleaning and preparation
+# Remove duplicates, if there are any
+global_precipitation <- global_precipitation %>% distinct()
+global_temp <- global_temp %>% distinct()
+crop_yields <- crop_yields %>% distinct()
+global_co2 <- global_co2 %>% distinct()
+
+# Convert columns to numeric
+global_temp <- global_temp %>%
+  mutate(across(everything(), as.numeric))
+
+global_co2 <- global_co2 %>%
+  mutate(across(everything(), as.numeric))
+
+global_precipitation <- global_precipitation %>%
+  mutate(across(everything(), as.numeric))
+
+# Merge climate data into a single dataframe on 'year'
+combined_data <- global_precipitation %>%
+  inner_join(global_temp, by = "year") %>%
+  inner_join(global_co2, by = "year") %>% 
+  inner_join(crop_yields, by = "year")
+
+library(tidyr)
+
+# Create a new variable
+combined_data <- combined_data %>%
+  group_by(item) %>%
+  arrange(year) %>%  # Ensure the data is sorted by year within each crop type
+  mutate(
+    temp_change_rate = replace_na(c(NA, diff(lowess)), 0),
+    co2_change_rate = replace_na(c(NA, diff(avg.c02.ppm)), 0)
+  ) %>%
+  ungroup()
+
+head(combined_data)
+summary(combined_data)
+```
+
+In this data wrangling step, I removed any potential duplicate entries and also made sure that all numeric columns were properly formatted to be ready for analysis. Once I merged the datasets, I set out to create 2 new variables.  In doing so, I made sure to display any NA values as 0, since the variables were change rate and I determined this would least affect the outcome.
+
+## Further analysis on final dataset
+Now that we have manipulated and merged the datasets, we will explore the data further by plotting different combinations.
+
+```{R Plot precipitation vs crop yield, include = TRUE}
+# Scatter plot of precipitation anomaly vs crop yield
+ggplot(combined_data, aes(x = anomaly, y = crop_yields$Yield)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Precipitation Anomalies vs Crop Yield",
+       x = "Precipitation Anomalies",
+       y = "Crop Yield")
+
+# Scatter plot of precipitation anomaly vs area harvested
+ggplot(combined_data, aes(x = anomaly, y = crop_yields$Area.harvested)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Precipitation Anomalies vs Area Harvested",
+       x = "Precipitation Anomalies",
+       y = "Area Harvested (hectacres)")
+```
+There aren't any specific patterns that can be detected from this scatter plot of precipitation anomalies and crop yield. This might be explained by various strategies employed by farmers, such as irrigation systems, mulching, and practices like no-till or reduced-till to minimize soil disturbance and retain more soil moisture.
+The considerable spread in the data points suggests that there are likely other factors that significantly affect the area harvested. Wheat consistently has the highest area harvested across precipitation anomalies, while soya beans are the most dispersed, which shows wider variability.
+
+```{R Plot co2 Emissions vs crop yield, include = TRUE}
+# Scatter plot of co2 emissions vs crop yield
+ggplot(combined_data, aes(x = avg.c02.ppm, y = crop_yields$Yield)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Co2 Emissions vs Crop Yield",
+       x = "Co2 Emissions",
+       y = "Crop Yield")
+
+# Scatter plot of co2 emissions vs area harvested
+ggplot(combined_data, aes(x = avg.c02.ppm, y = crop_yields$Area.harvested)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Co2 Emissions vs Area Harvested",
+       x = "Co2 Emissions",
+       y = "Area harvested (hectacres)")
+```
+The first scatter plot shows us a positive correlation between co2 emissions and crop yields for all crops selected. It appears that different crops have different amounts of sensitivity to co2 emissions. Specifically, this graph indicates that corn and rice may have higher yields with higher CO2 emissions compared to wheat and soya beans. However, further analysis, including looking at other factors will be important to be able to conclude this observation.
+
+The second scatter plot shows us a pretty similar pattern for corn and soya beans, where the area harvested for both crops increase fairly steadily as the co2 emissions increase; suggesting a strong positive correlation. 
+
+```{R Plot temp vs crop yield, include = TRUE}
+# Scatter plot of temperature vs crop yield
+ggplot(combined_data, aes(x = lowess, y = crop_yields$Yield)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Global Temperature vs Crop Yield",
+       x = "Global Temperature Anomalies",
+       y = "Crop Yield")
+
+# Scatter plot of temperature vs Area harvested
+ggplot(combined_data, aes(x = lowess, y = crop_yields$Area.harvested)) +
+  geom_point(aes(color=crop_yields$item)) +
+  labs(title = "Global Temperature vs Area harvested",
+       x = "Global Temperature Anomalies",
+       y = "Area harvested (hectacres)")
+```
+This also gives us a positive correlation between crop yield and temperature anomalies. Specifically, corn and rice appear to produce higher yield when the temperature anomaly is greater. The positive correlation appears stronger between the temperature anomalies and crop yield compared to temperature anomalies and area harvested.
+  
+  
+
+## Correlation Analysis
+
+```{R Correlation, include = TRUE}
+
+# Correlation Analysis
+cor_matrix <- combined_data %>%
+  select(anomaly, lowess, avg.c02.ppm, temp_change_rate, co2_change_rate, Yield, Area.harvested, Production) %>%
+  cor(use = "complete.obs")
+
+print(cor_matrix)
+
+```
+As we might expect, CO2 and temp is highly correlated. This is a well established relationship in climate science. As CO2 increases and traps heat in the earth's atmosphere, temperatures rise. 
+Next are yield and CO2 with a correlation coefficient of 0.70 and yield and lowess (temp anomaly) with a correlation coefficient of 0.69. Both suggests a strong positive correlation, supporting the patterns observed in the scatter plots above.
+Finally, when looking at Area harvested and co2 emissions or temperature anomalies, we can see that these correlation coefficients are clearly not as strong as it was with yield. Again, supporting what we observed in the scatter plots.
+Unfortunately, it does not appear that the new variables we created for the temperature change rate and the co2 emissions change rate are highly correlated with the other variables.
+  
+  
+## Fit a linear regression model to predict crop yield
+
+```{R regression model - yield, include = TRUE}
+
+yield_model <- lm(Yield ~ anomaly + lowess + avg.c02.ppm + temp_change_rate + co2_change_rate + item, data = combined_data)
+summary(yield_model)
+
+```
+This linear regression model was fitted to predict yield using all the climate data variables. The residuals tell us the difference between the actual and predicted values to provide a sense of the model's accuracy. The median residual of 419.4 indicates that, on average, the model predicts higher than actual values.
+The coefficients tell us the change in yield for a one-unit change in the various independent variables while holding others constant:   
+
+- *Anomaly* -- a p-value of 0.86361 is not significant, indicating that precipitation anomalies are not effective predictors of yield.    
+
+- *lowess (temp change)* -- a p-value of 0.57386 is also not significant, telling us the temperature anomalies is not an effective predictor for yield. 
+
+- *avg.co2.ppm* -- a p-value of 5.86e-05 is significant, telling us that co2 emissions is an effective predictor for yield. Increased co2 emissions may indicate higher yield.  
+
+- *temp_Change_rate* -- a p-value of 0.16127 is not significant, telling us the temperature change rate is not an effective predictor for yield.  
+
+- *co2_change_rate* -- a p-value of 0.56636  is not significant, telling us the co2 emissions change rate is not an effective predictor for yield.  
+
+- *itemRice, itemSoya beans, itemWheat* -- By looking at the estimate, the yield for all of these variables is lower than the yield for the reference crop, which in this case is corn. All of these variables are statistically significant based on their p-values.
+    
+The adjusted R-squared is 0.9298, suggesting that when adjusted for the number of predictors, 92.98% of the variability in yield can be explained by this model. Finally, looking at the F-statistic, we know that it is 410.1 with a p-value < 2.2e-16, which tell us the model is significant.
+  
+
+```{R Plot The Residuals}
+# find the residuals
+res_new <- resid(yield_model)
+
+# plot residuals v fitted values
+plot(fitted(yield_model), res_new,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "blue")
+
+```
+The residuals plot is showing concentrations of points in some areas, specifically above the zero line in the lower fitted values and also below the line around the middle. This might mean there is an issue with the linearity assumption or that we are missing key variables from the model. 
+There also seems to be some variation in the spread of residuals, which might mean heteroscedasticity, which would be a violation of the assumption of a constant variance of residuals.
+
+```{R Q-Q Plot of Model}
+qqnorm(res_new)
+qqline(res_new)
+```
+
+Seeing the results of the first model, I will try to improve upon it by log-transforming the yield variable.
+
+```{R improve regression model, include = TRUE}
+# Log-transform Yield
+combined_data$log_Yield <- log(combined_data$Yield)
+
+# Fit the model again using the log-transformed yield
+log_model <- lm(log_Yield ~ anomaly + lowess + avg.c02.ppm + temp_change_rate + co2_change_rate + item, data = combined_data)
+
+# Summarize the model
+summary(log_model)
+
+```
+
+This attempt to improve the regression model provided us with an adjusted R-squared value of 0.947, which is a slight improvement over the previous model. However, we should take a further look.
+
+
+
+```{R Plot New Model Residuals}
+# find the residuals
+res_new <- resid(log_model)
+
+# plot residuals v fitted values
+plot(fitted(log_model), res_new,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "blue")
+
+```
+
+The residuals appear more randomly scattered and have less concentrations as observed in the residuals plot for the original model, indicating that the log transformation improved the fit. There are also fewer noticeable patterns, suggesting a better fit. Finally, the spread is pretty consistent across the range of fitted values, indicating a variability in the response variable which is what we want for homoscedasticity.
+
+
+```{R Q-Q Plot of New Model}
+qqnorm(res_new)
+qqline(res_new)
+```
+The q-q plot shows that most of the residuals falls along the reference line, telling us the residuals are normally distributed. There are deviations in both the lower and upper end of the line, which may indicate that there are outliers, but this is quite common when using real datasets. Overall, this looks like an improvement from the initial model.
+  
+  
+## Implications  
+  
+Overall, the model suggests that CO2 emissions and temperature anomalies significantly impact crop yields, particularly for corn and rice. This is in line with existing research that state higher CO2 concentrations can increase photosynthesis in certain crops, which in turn can increase crop yields. Using this information is critical to understanding which crops are better suited for a future with ever-increasing CO2 emissions. The log transformation improved the model fit, but further research is required to look at other climate variables that were not included in these datasets. 
+
+## Limitations
+
+As alluded to earlier, one of the limitations with the current research is the number of climate change variables that were considered. In this paper, we examined CO2 emissions, temperature anomalies, and precipitation anomalies. However, there may be other factors such as humidity, wind speed, wind direction, sea levels, and UV index. There could also be other calculated variables, such as the number of days below freezing per year or the number of days above a certain temperature per year, that could have a high correlation to crop yield. Furthermore, with additional time and resources, instead of having a single model for general crop yield, the model could be made more precise for each type of crop. This could provide tangible insights into how much yield to expect for farmers that grow specific types of crops, given current climate conditions. 
+
+## Conclusion
+  
+The analysis showed a significant correlation between CO2 emissions and crop yields, specifically for corn and rice. These findings imply that as CO2 levels continue to increase, crop yields may increase in the short term. However, longer term sustainability of this relationship is not certain, especially as we consider other climate variables. Given how critical agriculture is to global food security, it should be a top priority to continue refining our understanding of this relationship and developing adaptive strategies to combat any threats to food security. As the effects of climate change increase, our ability to predict and respond to these changes becomes crucial in ensuring a secure food supply for ourselves and future generations. 
